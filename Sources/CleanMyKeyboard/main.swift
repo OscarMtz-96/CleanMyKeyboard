@@ -10,13 +10,23 @@ final class AppState: ObservableObject {
 
     private let blocker = InputBlocker()
 
-    func refreshPermission() {
+    @discardableResult
+    func refreshPermission() -> Bool {
+        let hadPermission = hasAccessibilityPermission
         hasAccessibilityPermission = AXIsProcessTrusted()
+        if hadPermission != hasAccessibilityPermission {
+            onChange?()
+        }
+        return hasAccessibilityPermission
     }
 
     func requestPermission() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        let hadPermission = hasAccessibilityPermission
         hasAccessibilityPermission = AXIsProcessTrustedWithOptions(options)
+        if hadPermission != hasAccessibilityPermission {
+            onChange?()
+        }
     }
 
     func openPrivacySettings() {
@@ -94,10 +104,11 @@ struct ContentView: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = AppState()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private var permissionTimer: Timer?
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_: Notification) {
-        state.onChange = { [weak self] in self?.updateStatusItem() }
+        state.onChange = { [weak self] in self?.stateDidChange() }
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
@@ -112,11 +123,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
-        updateStatusItem()
+        stateDidChange()
     }
 
     func applicationWillTerminate(_: Notification) {
+        permissionTimer?.invalidate()
         state.unlock()
+    }
+
+    private func stateDidChange() {
+        updateStatusItem()
+        watchForPermission()
+    }
+
+    private func watchForPermission() {
+        guard !state.hasAccessibilityPermission else {
+            permissionTimer?.invalidate()
+            permissionTimer = nil
+            return
+        }
+        guard permissionTimer == nil else { return }
+
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.state.refreshPermission() {
+                    self.relaunch()
+                }
+            }
+        }
+    }
+
+    private func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            if error == nil {
+                Task { @MainActor in
+                    NSApp.terminate(nil)
+                }
+            }
+        }
     }
 
     private func updateStatusItem() {
