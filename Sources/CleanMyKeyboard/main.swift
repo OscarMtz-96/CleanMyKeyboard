@@ -83,10 +83,11 @@ struct ContentView: View {
                 .keyboardShortcut(.defaultAction)
             } else {
                 VStack(spacing: 10) {
-                    Text("Accessibility permission is required to block input.")
+                    Text("Accessibility permission is required to block input. After enabling it, quit Clean My Keyboard completely and open it again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack {
                         Button("Request Permission") { state.requestPermission() }
                         Button("Open Settings") { state.openPrivacySettings() }
@@ -104,11 +105,10 @@ struct ContentView: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = AppState()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private var permissionTimer: Timer?
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_: Notification) {
-        state.onChange = { [weak self] in self?.stateDidChange() }
+        state.onChange = { [weak self] in self?.updateStatusItem() }
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
@@ -123,46 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
-        stateDidChange()
+        updateStatusItem()
     }
 
     func applicationWillTerminate(_: Notification) {
-        permissionTimer?.invalidate()
         state.unlock()
-    }
-
-    private func stateDidChange() {
-        updateStatusItem()
-        watchForPermission()
-    }
-
-    private func watchForPermission() {
-        guard !state.hasAccessibilityPermission else {
-            permissionTimer?.invalidate()
-            permissionTimer = nil
-            return
-        }
-        guard permissionTimer == nil else { return }
-
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.state.refreshPermission() {
-                    self.relaunch()
-                }
-            }
-        }
-    }
-
-    private func relaunch() {
-        let configuration = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
-            if error == nil {
-                Task { @MainActor in
-                    NSApp.terminate(nil)
-                }
-            }
-        }
     }
 
     private func updateStatusItem() {

@@ -18,6 +18,10 @@ BACKGROUND="$DMG_ROOT/.background/dmg-background.png"
 cd "$ROOT"
 swift build -c release --product "$PRODUCT_NAME"
 
+while MOUNTED="$(hdiutil info | awk -v volume="/Volumes/$APP_NAME" '$0 ~ volume "($| [0-9]+$)" {print substr($0, index($0, volume)); exit}')" && [[ -n "$MOUNTED" ]]; do
+  hdiutil detach "$MOUNTED" >/dev/null 2>&1 || hdiutil detach "$MOUNTED" -force >/dev/null
+done
+
 rm -rf "$APP" "$DMG" "$RW_DMG" "$DMG_ROOT" "$ICONSET"
 mkdir -p "$MACOS" "$RESOURCES"
 cp ".build/release/$PRODUCT_NAME" "$MACOS/$PRODUCT_NAME"
@@ -51,8 +55,14 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+xattr -cr "$APP"
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
+
 mkdir -p "$DMG_ROOT/.background"
 cp -R "$APP" "$DMG_ROOT/"
+xattr -cr "$DMG_ROOT/$APP_NAME.app"
+codesign --verify --deep --strict "$DMG_ROOT/$APP_NAME.app"
 ln -s /Applications "$DMG_ROOT/Applications"
 swift scripts/make-dmg-background.swift "$BACKGROUND"
 chflags hidden "$DMG_ROOT/.background"
@@ -84,9 +94,13 @@ tell application "Finder"
 end tell
 APPLESCRIPT
 
+xattr -cr "$MOUNT_POINT/$APP_NAME.app"
+codesign --verify --deep --strict "$MOUNT_POINT/$APP_NAME.app"
+
 sync
 hdiutil detach "$MOUNT_POINT"
 trap - EXIT
 hdiutil convert "$RW_DMG" -format UDZO -o "$DMG"
 rm -f "$RW_DMG"
+xattr -cr "$APP" "$DMG_ROOT/$APP_NAME.app"
 echo "$DMG"
