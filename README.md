@@ -2,7 +2,7 @@
 
 Minimal macOS app to block keyboard and mouse input while you clean your MacBook.
 
-Download the latest DMG installer from [the release asset](https://github.com/OscarMtz-96/CleanMyKeyboard/releases/latest/download/Clean%20My%20Keyboard.dmg).
+Download the latest DMG installer from [the release asset](http://github.com/OscarMtz-96/CleanMyKeyboard/releases).
 
 Unlock shortcut: hold `Control + Option + Command + Escape` for 2 seconds.
 
